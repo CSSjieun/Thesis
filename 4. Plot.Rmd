@@ -1,0 +1,332 @@
+---
+title: "4. Plot"
+author: "Jieun Park"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# papers per author
+
+```{r}
+png("plot_papers_per_author.png", width = 800, height = 600)
+
+# papers per author
+Interdis %>%
+  group_by(discipline, authid) %>%
+  summarise(n_papers = n()) %>%
+  group_by(discipline, n_papers) %>%
+  summarise(n_authors = n()) %>%
+  ungroup() %>%
+  ggplot(aes(x = n_papers, y = n_authors, color = discipline, shape = discipline)) +
+  geom_point(show.legend = FALSE) +
+  geom_line(linetype = 2, show.legend = FALSE) +
+  labs(x = "Number of Papers", y = "Number of Authors") +
+  scale_color_manual(values = c("ARTS" = "blue", "SOCI" = "green", "COMP" = "yellow",
+                                "ENGI" = "orange", "MATHS" = "red", "PHYS" = "purple")) +
+  theme_minimal() 
+
+dev.off()
+```
+
+# number of authors per paper
+
+```{r}
+png("plot_authors_per_paper.png", width = 800, height = 600)
+
+Interdis |> 
+  group_by(discipline, number_of_collaborator) %>%
+  distinct(collaboration_group, .keep_all = TRUE) |> 
+  summarise(n_papers = n()) %>%
+  ungroup() %>%
+  ggplot(aes(x = n_papers, y = number_of_collaborator, color = discipline, shape = discipline)) +
+  geom_point(show.legend = FALSE) +
+  geom_line(linetype = 2, show.legend = FALSE) +
+  labs(x = "Number of authors", y = "Number of papers") +
+  scale_color_manual(values = c("ARTS" = "blue", "SOCI" = "green", "COMP" = "yellow",
+                                "ENGI" = "orange", "MATHS" = "red", "PHYS" = "purple")) +
+  theme_minimal() 
+
+dev.off()
+```
+
+# Community
+
+```{r}
+V(gRC)$color[V(gRC)$discipline == "HSS"] <- "red"
+V(gRC)$color[V(gRC)$discipline == "STEM"] <- "blue"
+
+# HSS
+V(gRC)[V(gRC)$discipline == "HSS"] # 1177
+# STEM
+V(gRC)[V(gRC)$discipline == "STEM"] # 11464
+
+length(V(gRC)[V(gRC)$discipline == "HSS"])
+length(V(gRC)[V(gRC)$discipline == "STEM"])
+
+layout <- layout_nicely(gRC)
+
+png("plot_HSS_STEM_community.png")
+
+par(mar=c(0, 0, 0, 0))
+plot(gRC, 
+     vertex.label = "",
+     vertex.size = 3,
+     layout = layout)
+
+dev.off()
+
+
+```
+
+# Interdisciplinary_network_community
+
+```{r}
+community = cluster_louvain(gRC, resolution = 0.01)
+head(membership(community))
+modularity(community)
+length(community)
+
+V(gRC)$color[V(gRC)$discipline == "HSS"] <- "red"
+V(gRC)$color[V(gRC)$discipline == "STEM"] <- "blue"
+
+layout <- layout_nicely(gRC)
+
+png("plot_interdisciplinary_network_community.png")
+
+par(mar=c(0, 0, 0, 0))
+plot(community, gRC, 
+     vertex.label = "",
+     vertex.size = 3,
+     layout = layout) 
+
+dev.off()
+
+```
+
+### HSS centrality - HSS
+
+```{r}
+
+betweenness_centrality <- betweenness(HSS_giant_component)
+
+# Find the maximum betweenness centrality value
+max_betweenness <- max(betweenness_centrality)
+
+# Find the node(s) with the maximum betweenness centrality
+nodes_with_max_betweenness <- which(betweenness_centrality == max_betweenness)
+
+# Check the names and values
+node_ids <- names(nodes_with_max_betweenness)
+
+# Print the node(s) with the highest betweenness centrality
+print(paste("Node(s) with highest betweenness centrality:", node_ids))
+print(paste("Highest betweenness centrality value:", round(max_betweenness, 0)))
+
+graph_df <- get.data.frame(HSS_giant_component, what="both")
+graph_df$edges |> filter(from == 16432831800)
+
+
+
+plot(HSS_giant_component,
+     vertex.label = "",
+     vertex.size = 3)
+
+vertex.size <- ifelse(V(HSS_giant_component)$name == 16432831800, 6, 2)
+
+png("the node that has the highest betweenness centrality in the HSS network.png")
+
+plot(HSS_giant_component, 
+     vertex.color = ifelse(V(HSS_giant_component)$name == 16432831800, "red", "black"),
+     vertex.label = "", vertex.size = vertex.size, layout = layout_nicely)
+
+dev.off()
+```
+
+### Betweeness centrality - Interdisciplinary
+
+```{r}
+betweenness_centrality <- betweenness(gRC)
+
+# Find the maximum betweenness centrality value
+max_betweenness <- max(betweenness_centrality)
+
+# Find the node(s) with the maximum betweenness centrality
+nodes_with_max_betweenness <- which(betweenness_centrality == max_betweenness)
+
+# Check the names and values
+node_ids <- names(nodes_with_max_betweenness)
+
+# Print the node(s) with the highest betweenness centrality
+print(paste("Node(s) with highest betweenness centrality:", node_ids))
+print(paste("Highest betweenness centrality value:", round(max_betweenness, 0)))
+
+graph_df <- get.data.frame(gRC, what="both")
+graph_df$edges |> filter(from == 56249634600)
+
+png("the node that has the highest betweenness centrality in the interdisciplinary network.png")
+
+vertex.size <- ifelse(V(gRC)$name == 56249634600, 7, 2)
+vertex.color <- ifelse(V(gRC)$name == 56249634600, "red", "black")
+
+plot(gRC, 
+     vertex.color = vertex.color,
+     vertex.label = "", 
+     vertex.size = vertex.size, 
+     layout = layout_nicely)
+
+
+dev.off()
+```
+
+### Closeness centrality - Interdisciplinary
+
+```{r}
+closeness_centrality <- closeness(gRC)
+
+# Find the maximum betweenness centrality value
+max_closeness <- max(closeness_centrality)
+
+# Find the node(s) with the maximum betweenness centrality
+nodes_with_max_closeness <- which(closeness_centrality == max_closeness)
+
+# Check the names and values
+node_ids <- names(nodes_with_max_closeness)
+
+# Print the node(s) with the highest betweenness centrality
+print(paste("Node(s) with highest closeness centrality:", node_ids))
+print(paste("Highest closeness centrality value:", round(max_closeness, 5)))
+
+max_closeness <- 2e-05
+formatted_closeness <- format(max_closeness, scientific = FALSE)
+print(paste("Highest closeness centrality value:", formatted_closeness))
+
+graph_df <- get.data.frame(gRC, what="both")
+graph_df$edges |> filter(from == 6602128193)
+
+
+png("the node that has the highest closeness centrality in the interdisciplinary network.png")
+
+vertex.size <- ifelse(V(gRC)$name == 6602128193, 7, 2)
+vertex.color <- ifelse(V(gRC)$name == 6602128193, "red", "black")
+
+plot(gRC, 
+     vertex.color = vertex.color,
+     vertex.label = "", 
+     vertex.size = vertex.size, 
+     layout = layout_nicely)
+
+dev.off()
+```
+
+### Closeness centrality - HSS
+
+```{r}
+closeness_centrality <- closeness(HSS_giant_component)
+
+# Find the maximum betweenness centrality value
+max_closeness <- max(closeness_centrality)
+
+# Find the node(s) with the maximum betweenness centrality
+nodes_with_max_closeness <- which(closeness_centrality == max_closeness)
+
+# Check the names and values
+node_ids <- names(nodes_with_max_closeness)
+
+# Print the node(s) with the highest betweenness centrality
+print(paste("Node(s) with highest closeness centrality:", node_ids))
+print(paste("Highest closeness centrality value:", round(max_closeness, 5)))
+
+graph_df <- get.data.frame(gRC, what="both")
+graph_df$edges |> filter(from == 55330575700)
+
+png("the node that has the highest closeness centrality in the HSS network.png")
+
+vertex.size <- ifelse(V(HSS_giant_component)$name == 55330575700, 6, 2)
+vertex.color <- ifelse(V(HSS_giant_component)$name == 55330575700, "red", "black")
+
+plot(HSS_giant_component, 
+     vertex.color = vertex.color,
+     vertex.label = "", 
+     vertex.size = vertex.size, 
+     layout = layout_nicely)
+
+dev.off()
+```
+
+### betweenness centrality - STEM
+
+```{r}
+betweenness_centrality <- betweenness(STEM_giant_component)
+
+# Find the maximum betweenness centrality value
+max_betweenness <- max(betweenness_centrality)
+
+# Find the node(s) with the maximum betweenness centrality
+nodes_with_max_betweenness <- which(betweenness_centrality == max_betweenness)
+
+# Check the names and values
+node_ids <- names(nodes_with_max_betweenness)
+
+# Print the node(s) with the highest betweenness centrality
+print(paste("Node(s) with highest betweenness centrality:", node_ids))
+print(paste("Highest betweenness centrality value:", round(max_betweenness, 0)))
+
+graph_df <- get.data.frame(STEM_giant_component, what="both")
+graph_df$edges |> filter(from == 36661053300)
+
+png("the node that has the highest betweenness centrality in the STEM network.png")
+
+vertex.size <- ifelse(V(STEM_giant_component)$name == 36661053300, 7, 2)
+vertex.color <- ifelse(V(STEM_giant_component)$name == 36661053300, "red", "black")
+
+plot(STEM_giant_component, 
+     vertex.color = vertex.color,
+     vertex.label = "", 
+     vertex.size = vertex.size, 
+     layout = layout_nicely)
+
+dev.off()
+```
+
+### Closeness centrality - STEM
+
+```{r}
+closeness_centrality <- closeness(STEM_giant_component)
+
+# Find the maximum betweenness centrality value
+max_closeness <- max(closeness_centrality)
+
+# Find the node(s) with the maximum betweenness centrality
+nodes_with_max_closeness <- which(closeness_centrality == max_closeness)
+
+# Check the names and values
+node_ids <- names(nodes_with_max_closeness)
+
+# Print the node(s) with the highest betweenness centrality
+print(paste("Node(s) with highest closeness centrality:", node_ids))
+print(paste("Highest closeness centrality value:", round(max_closeness, 5)))
+
+max_closeness <- 2e-05
+formatted_closeness <- format(max_closeness, scientific = FALSE)
+print(paste("Highest closeness centrality value:", formatted_closeness))
+
+graph_df <- get.data.frame(STEM_giant_component, what="both")
+graph_df$edges |> filter(from == 6602128193)
+
+png("the node that has the highest closeness centrality in the STEM network.png")
+
+vertex.size <- ifelse(V(STEM_giant_component)$name == 6602128193, 7, 2)
+vertex.color <- ifelse(V(STEM_giant_component)$name == 6602128193, "red", "black")
+
+plot(STEM_giant_component, 
+     vertex.color = vertex.color,
+     vertex.label = "", 
+     vertex.size = vertex.size, 
+     layout = layout_nicely)
+
+dev.off()
+```
+
+
+
+

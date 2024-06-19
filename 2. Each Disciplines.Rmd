@@ -1,0 +1,454 @@
+---
+title: "2. Each academic fields"
+author: "Jieun Park"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Each disciplinary data
+
+```{r}
+# ARTS
+
+ARTS <- read.csv("DATA/data_ARTS.csv")
+
+ARTS <- ARTS |> group_by(collaboration_group) |> 
+  mutate(number_of_collaborator = n(), .before = sequence) |> ungroup()
+
+ARTS <- ARTS |> mutate(discipline = c("ARTS"))
+
+# SOCI
+
+SOCI <- read.csv("DATA/data_SOCI.csv")
+
+SOCI <- SOCI |> group_by(collaboration_group) |> 
+  mutate(number_of_collaborator = n(), .before = sequence) |> ungroup()
+
+SOCI <- SOCI |> mutate(discipline = c("SOCI"))
+
+# COMP
+
+COMP <- read.csv("DATA/data_COMP.csv")
+
+COMP <- COMP |> group_by(collaboration_group) |> 
+  mutate(number_of_collaborator = n(), .before = sequence) |> ungroup()
+
+COMP <- COMP |> mutate(discipline = c("COMP"))
+
+# ENGI
+
+ENGI <- read.csv("DATA/data_ENGI.csv")
+
+ENGI <- ENGI |> group_by(collaboration_group) |> 
+  mutate(number_of_collaborator = n(), .before = sequence) |> ungroup()
+
+ENGI <- ENGI |> mutate(discipline = c("ENGI"))
+
+# MATHS
+
+MATHS <- read.csv("DATA/data_MATH.csv")
+
+MATHS <- MATHS |> group_by(collaboration_group) |> 
+  mutate(number_of_collaborator = n(), .before = sequence) |> ungroup()
+
+MATHS <- MATHS |> mutate(discipline = c("MATHS"))
+
+# PHYS
+
+PHYS <- read.csv("DATA/data_PHYS.csv")
+
+PHYS <- PHYS |> group_by(collaboration_group) |> 
+  mutate(number_of_collaborator = n(), .before = sequence) |> ungroup()
+
+PHYS <- PHYS |> mutate(discipline = c("PHYS"))
+```
+
+# Function
+
+```{r}
+process_discipline_graph <- function(discipline_data, discipline_name) {
+  # Perform data processing specific to the discipline
+  
+  # Filter the data for the specific discipline
+  discipline_filtered <- discipline_data |>
+    filter(number_of_collaborator > 1) |>
+    group_by(title) |>
+    mutate(authors = list(authid)) |>
+    select(title, authors) |>
+    ungroup() |>
+    distinct(title, .keep_all = TRUE) |>
+    unnest(authors)
+  
+  # Define function to replace null values
+  replace_null <- function(x) {
+    ifelse(is.null(x), 0, 1)
+  }
+  
+  # Create wide network matrix
+  wide_network <- pivot_wider(discipline_filtered, 
+                               names_from = authors, 
+                               values_from = authors, 
+                               values_fn = replace_null)
+  
+  wide_network <- ifelse(is.na(wide_network), 0, 1) 
+  wide_network <- data.frame(wide_network) |> select(-title)
+  wide_network <- as.matrix(wide_network)
+  wide_network_transpose <- t(wide_network)
+  
+  # Calculate author relationship matrix
+  author_relationship <- wide_network_transpose %*% wide_network 
+  diag(author_relationship) <- 0
+  
+  # Convert to binary matrix
+  discipline_matrix <- ifelse(author_relationship == 0, 0, 1)
+  
+  # Save the data
+  write.csv(discipline_matrix, paste0(discipline_name, "_matrix_zero_one.csv"), row.names = FALSE)
+  
+  # Create graph
+  g_discipline <- graph_from_adjacency_matrix(discipline_matrix)
+  
+  # Save edges
+  edges_discipline <- as_data_frame(g_discipline)
+  edges_discipline <- data.frame(apply(edges_discipline, 2, function(x) gsub("X", "", x)))
+  write.csv(edges_discipline, paste0(discipline_name, "_edges.csv"), row.names = FALSE)
+  
+  # Save nodes
+  nodes_discipline <- discipline_data |> select(authid, discipline, date)
+  nodes_discipline <- rbind(nodes_discipline[2, ], nodes_discipline[-2, ])
+  nodes_discipline$authid <- as.character(nodes_discipline$authid)
+  write.csv(nodes_discipline, paste0(discipline_name, "_nodes.csv"), row.names = FALSE)
+}
+
+# apply to each disciplines
+process_discipline_graph(ARTS, "ARTS")
+process_discipline_graph(SOCI, "SOCI")
+process_discipline_graph(COMP, "COMP")
+process_discipline_graph(PHYS, "PHYS")
+process_discipline_graph(MATHS, "MATHS")
+process_discipline_graph(ENGI, "ENGI")
+
+```
+
+# edge by date function
+
+```{r}
+create_edge_data <- function(discipline_data, year, file_name) {
+  # Filtering the data
+  discipline_filtered <- discipline_data |>
+    filter(date == year) |>
+    filter(number_of_collaborator > 1) |>
+    group_by(title) |>
+    mutate(authors = list(authid)) |>
+    select(title, authors) |>
+    ungroup() |>
+    distinct(title, .keep_all = TRUE) |>
+    unnest(authors)
+  
+  # Define the function to replace the NAs
+  replace_null <- function(x) {
+    ifelse(is.null(x), 0, 1)
+  }
+  
+  # Formulating network matrix
+  wide_network <- pivot_wider(discipline_filtered, 
+                               names_from = authors, 
+                               values_from = authors, 
+                               values_fn = replace_null)
+  
+  wide_network <- ifelse(is.na(wide_network), 0, 1) 
+  wide_network <- data.frame(wide_network) |> select(-title)
+  wide_network <- as.matrix(wide_network)
+  wide_network_transpose <- t(wide_network)
+  
+  # Calculate the authorship relationship
+  author_relationship <- wide_network_transpose %*% wide_network 
+  diag(author_relationship) <- 0
+  
+  # Chaning the matrix as binary
+  discipline_matrix <- ifelse(author_relationship == 0, 0, 1)
+  
+  # Making graph
+  g_discipline <- graph_from_adjacency_matrix(discipline_matrix)
+  
+  # Save the edge data
+  edges_discipline <- as_data_frame(g_discipline)
+  edges_discipline <- data.frame(apply(edges_discipline, 2, function(x) gsub("X", "", x)))
+  write.csv(edges_discipline, file_name, row.names = FALSE)
+}
+
+# ARTS
+
+for (year in 2014:2024) {
+  # 파일 이름 생성
+  file_name <- paste0("edge_data_", "ARTS", "_", year, "_edges.csv")
+  
+  # 엣지 데이터 생성 및 저장
+  create_edge_data(ARTS, year, file_name)
+}
+
+# SOCI
+
+for (year in 2014:2024) {
+  # 파일 이름 생성
+  file_name <- paste0("edge_data_", "SOCI", "_", year, "_edges.csv")
+  
+  # 엣지 데이터 생성 및 저장
+  create_edge_data(SOCI, year, file_name)
+}
+
+# COMP
+
+for (year in 2014:2024) {
+  # 파일 이름 생성
+  file_name <- paste0("edge_data_", "COMP", "_", year, "_edges.csv")
+  
+  # 엣지 데이터 생성 및 저장
+  create_edge_data(COMP, year, file_name)
+}
+
+# ENGI
+
+for (year in 2014:2024) {
+  # 파일 이름 생성
+  file_name <- paste0("edge_data_", "ENGI", "_", year, "_edges.csv")
+  
+  # 엣지 데이터 생성 및 저장
+  create_edge_data(ENGI, year, file_name)
+}
+
+# MATHS
+
+for (year in 2014:2024) {
+  # 파일 이름 생성
+  file_name <- paste0("edge_data_", "MATHS", "_", year, "_edges.csv")
+  
+  # 엣지 데이터 생성 및 저장
+  create_edge_data(MATHS, year, file_name)
+}
+
+# PHYS
+
+for (year in 2014:2024) {
+  # 파일 이름 생성
+  file_name <- paste0("edge_data_", "PHYS", "_", year, "_edges.csv")
+  
+  # 엣지 데이터 생성 및 저장
+  create_edge_data(PHYS, year, file_name)
+}
+
+```
+
+## Arts and Humanities
+
+```{r}
+arts_nodes <- read_csv("Data/ARTS_nodes.csv")
+arts_edges <- read_csv("Data/ARTS_edges.csv")
+
+arts_nodes <- arts_nodes |> select(-date) |> unique()
+
+arts_nodes; arts_edges
+
+g_arts <- graph_from_data_frame(arts_edges, vertices = arts_nodes, directed = FALSE)
+
+# Finding the giant component
+cc_arts <- components(g_arts)
+
+
+biggest_component_index <- which.max(cc_arts$csize)
+
+
+nodes_in_biggest_component <- which(cc_arts$membership == biggest_component_index)
+
+giant_component_arts <- induced_subgraph(g_arts, nodes_in_biggest_component)
+giant_component_arts <- simplify(giant_component_arts)
+
+# Basic Statistics
+vcount(giant_component_arts)
+transitivity(giant_component_arts)
+diameter(giant_component_arts)
+mean_distance(giant_component_arts)
+```
+
+## Social Science
+
+```{r}
+# SOCI
+soci_nodes <- read_csv("Data/SOCI_nodes.csv")
+soci_edges <- read_csv("Data/SOCI_edges.csv")
+
+soci_nodes <- soci_nodes |> select(-date) |> unique()
+
+soci_nodes <- rbind(soci_nodes[2, ], soci_nodes[-2, ])
+
+soci_nodes; soci_edges
+
+g_soci <- graph_from_data_frame(soci_edges, vertices = soci_nodes, directed = FALSE)
+
+# Finding the giant component
+cc_soci <- components(g_soci)
+
+biggest_component_index <- which.max(cc_soci$csize)
+
+nodes_in_biggest_component <- which(cc_soci$membership == biggest_component_index)
+
+giant_component_soci <- induced_subgraph(g_soci, nodes_in_biggest_component)
+giant_component_soci <- simplify(giant_component_soci)
+
+# Basic Statistics
+vcount(giant_component_soci)
+transitivity(giant_component_soci)
+diameter(giant_component_soci)
+mean_distance(giant_component_soci)
+```
+
+## Computer Science
+
+```{r}
+# COMP
+comp_nodes <- read_csv("Data/COMP_nodes.csv")
+comp_edges <- read_csv("Data/COMP_edges.csv")
+
+comp_nodes <- comp_nodes |> select(-date) |> unique()
+
+comp_nodes; comp_edges
+
+comp_nodes <- rbind(comp_nodes[2, ], comp_nodes[-2, ])
+
+comp_edges <- na.omit(comp_edges)
+
+comp_nodes; comp_edges
+
+g_comp <- graph_from_data_frame(comp_edges, vertices = comp_nodes, directed = FALSE)
+
+# Finding the giant component
+cc_comp <- components(g_comp)
+
+biggest_component_index <- which.max(cc_comp$csize)
+
+nodes_in_biggest_component <- which(cc_comp$membership == biggest_component_index)
+
+giant_component_comp <- induced_subgraph(g_comp, nodes_in_biggest_component)
+giant_component_comp <- simplify(giant_component_comp)
+
+# Basic Statistics
+vcount(giant_component_comp)
+transitivity(giant_component_comp)
+diameter(giant_component_comp)
+mean_distance(giant_component_comp)
+```
+
+
+## Engineering
+
+```{r}
+# ENGI
+engi_nodes <- read_csv("Data/ENGI_nodes.csv")
+engi_edges <- read_csv("Data/ENGI_edges.csv")
+
+engi_nodes <- engi_nodes |> select(-date) |> unique()
+
+engi_nodes; engi_edges
+
+g_engi <- graph_from_data_frame(engi_edges, vertices = engi_nodes, directed = FALSE)
+
+# Finding the giant component
+cc_engi <- components(g_engi)
+
+biggest_component_index <- which.max(cc_engi$csize)
+
+nodes_in_biggest_component <- which(cc_engi$membership == biggest_component_index)
+
+giant_component_engi <- induced_subgraph(g_engi, nodes_in_biggest_component)
+giant_component_engi <- simplify(giant_component_engi)
+
+# Basic Statistics
+vcount(giant_component_engi)
+transitivity(giant_component_engi)
+diameter(giant_component_engi)
+mean_distance(giant_component_engi)
+```
+
+## Mathematics
+
+```{r}
+# MATH
+math_nodes <- read_csv("Disciplinary_graph_data/MATHS_nodes.csv")
+math_edges <- read_csv("Disciplinary_graph_data/MATHS_edges.csv")
+
+math_edges$to <- as.character(math_edges$to)
+math_nodes$authid <- as.character(math_nodes$authid)
+
+math_nodes <- math_nodes |> select(-date) |> distinct(authid, .keep_all = TRUE)
+
+math_nodes <- rbind(math_nodes[2, ], math_nodes[-2, ])
+
+colSums(is.na(math_edges))
+
+math_edges <- na.omit(math_edges)
+
+math_edges <- math_edges |>  filter(!to == "3.5561e.10") |> filter(!to == "3.5561e.10")
+
+math_nodes; math_edges
+
+g_math <- graph_from_data_frame(math_edges, vertices = math_nodes, directed = FALSE)
+
+# Finding the giant component
+cc_math <- components(g_math)
+
+biggest_component_index <- which.max(cc_math$csize)
+
+nodes_in_biggest_component <- which(cc_math$membership == biggest_component_index)
+
+# Basic Statistics
+giant_component_math <- induced_subgraph(g_math, nodes_in_biggest_component)
+giant_component_math <- simplify(giant_component_math)
+
+vcount(giant_component_math)
+transitivity(giant_component_math)
+diameter(giant_component_math)
+mean_distance(giant_component_math)
+```
+
+## Physics
+
+```{r}
+# PHYS
+phys_nodes <- read_csv("Disciplinary_graph_data/PHYS_nodes.csv")
+phys_edges <- read_csv("Disciplinary_graph_data/PHYS_edges.csv")
+
+phys_edges$to <- as.character(phys_edges$to)
+phys_edges$from <- as.character(phys_edges$from)
+phys_nodes$authid <- as.character(phys_nodes$authid)
+
+phys_nodes <- phys_nodes |> select(-date) |> distinct(authid, .keep_all = TRUE)
+
+phys_nodes <- rbind(phys_nodes[2, ], phys_nodes[-2, ])
+
+colSums(is.na(phys_edges))
+
+phys_nodes; phys_edges
+
+
+g_phys <- graph_from_data_frame(phys_edges, vertices = phys_nodes, directed = FALSE)
+
+# Finding the giant component
+cc_phys <- components(g_phys)
+
+biggest_component_index <- which.max(cc_phys$csize)
+
+nodes_in_biggest_component <- which(cc_phys$membership == biggest_component_index)
+
+giant_component_phys <- induced_subgraph(g_phys, nodes_in_biggest_component)
+giant_component_phys <- simplify(giant_component_phys)
+
+# Basic Statistics
+vcount(giant_component_phys)
+transitivity(giant_component_phys)
+diameter(giant_component_phys)
+mean_distance(giant_component_phys)
+```
+
+
+
+

@@ -1,0 +1,1710 @@
+---
+title: "5. Yearly analysis"
+author: "Jieun Park"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Library
+
+```{r}
+library(igraph)
+library(dplyr)
+library(tidyr)
+```
+
+
+# Data
+
+# Each disciplinary data
+
+```{r}
+# ARTS
+
+ARTS <- read.csv("DATA/data_ARTS.csv")
+
+ARTS <- ARTS |> group_by(collaboration_group) |> 
+  mutate(number_of_collaborator = n(), .before = sequence) |> ungroup()
+
+ARTS <- ARTS |> mutate(discipline = c("ARTS"))
+
+# SOCI
+
+SOCI <- read.csv("DATA/data_SOCI.csv")
+
+SOCI <- SOCI |> group_by(collaboration_group) |> 
+  mutate(number_of_collaborator = n(), .before = sequence) |> ungroup()
+
+SOCI <- SOCI |> mutate(discipline = c("SOCI"))
+
+# COMP
+
+COMP <- read.csv("DATA/data_COMP.csv")
+
+COMP <- COMP |> group_by(collaboration_group) |> 
+  mutate(number_of_collaborator = n(), .before = sequence) |> ungroup()
+
+COMP <- COMP |> mutate(discipline = c("COMP"))
+
+# ENGI
+
+ENGI <- read.csv("DATA/data_ENGI.csv")
+
+ENGI <- ENGI |> group_by(collaboration_group) |> 
+  mutate(number_of_collaborator = n(), .before = sequence) |> ungroup()
+
+ENGI <- ENGI |> mutate(discipline = c("ENGI"))
+
+# MATHS
+
+MATHS <- read.csv("DATA/data_MATH.csv")
+
+MATHS <- MATHS |> group_by(collaboration_group) |> 
+  mutate(number_of_collaborator = n(), .before = sequence) |> ungroup()
+
+MATHS <- MATHS |> mutate(discipline = c("MATHS"))
+
+# PHYS
+
+PHYS <- read.csv("DATA/data_PHYS.csv")
+
+PHYS <- PHYS |> group_by(collaboration_group) |> 
+  mutate(number_of_collaborator = n(), .before = sequence) |> ungroup()
+
+PHYS <- PHYS |> mutate(discipline = c("PHYS"))
+
+Interdis <- rbind(ARTS, SOCI, ENGI, COMP, MATHS, PHYS)
+```
+
+## 2024
+
+```{r}
+Interdis_24 <- Interdis |> filter(date == 2024)
+Interdis_24 <- Interdis_24 |> select(collaboration_group, authid, date, discipline, title)
+
+matrix <- Interdis_24 |> select(collaboration_group, authid, title) |> filter(collaboration_group > 1)
+matrix <- matrix |> group_by(title) |> 
+  mutate(authors = list(authid)) |> 
+  select(title, authors) |> 
+  ungroup() |> 
+  distinct(title, .keep_all = TRUE) |> 
+  unnest(authors) 
+
+```
+
+```{r}
+replace_null <- function(x) {
+  ifelse(is.null(x), 0, 1)
+}
+
+# 3
+# Pivot the data frame wider
+wide_network <- pivot_wider(matrix, 
+                             names_from = authors, 
+                             values_from = authors, 
+                             values_fn = replace_null)
+
+# 4
+wide_network <- ifelse(is.na(wide_network), 0, 1) 
+wide_network <- data.frame(wide_network) |> select(-title)
+wide_network_interdis <- as.matrix(wide_network)
+wide_network_interdis_transpose <- t(wide_network_interdis)
+
+dim(wide_network_interdis_transpose)
+dim(wide_network_interdis)
+
+# 5 
+# Perform matrix multiplication - author projection making squared matrix
+author_relationship_interdis <- wide_network_interdis_transpose %*% wide_network_interdis 
+
+diag(author_relationship_interdis) <- 0
+dim(author_relationship_interdis)
+
+inter_matrix_zero_one = ifelse(author_relationship_interdis == 0, 0, 1)
+dim(inter_matrix_zero_one)
+
+rownames(inter_matrix_zero_one) <- gsub("^X", "", rownames(inter_matrix_zero_one))
+colnames(inter_matrix_zero_one) <- gsub("^X", "", colnames(inter_matrix_zero_one))
+
+g_24 <- graph_from_adjacency_matrix(inter_matrix_zero_one, mode = "undirected")
+
+g_24 <- simplify(g_24)
+
+authid <- V(g_24)$name
+
+# Match indices of vertices in g_14 to their corresponding authid in Interdis
+indices <- match(authid, Interdis$authid)
+
+# Get discipline information corresponding to the matched indices
+discipline_info <- Interdis$discipline[indices]
+
+# Add discipline information as a vertex attribute in g_14
+V(g_24)$discipline <- discipline_info
+
+
+V(g_24)$color[V(g_24)$discipline == "ARTS"] <- "red"
+V(g_24)$color[V(g_24)$discipline == "SOCI"] <- "red"
+V(g_24)$color[V(g_24)$discipline == "COMP"] <- "blue"
+V(g_24)$color[V(g_24)$discipline == "MATHS"] <- "blue"
+V(g_24)$color[V(g_24)$discipline == "PHYS"] <- "blue"
+V(g_24)$color[V(g_24)$discipline == "ENGI"] <- "blue"
+
+components <- components(g_24)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(g_24, largest_component_vertices)
+
+png("2024_interdis.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+### HSS & STEM
+
+```{r}
+HSS <- V(g_24)[V(g_24)$discipline %in% c("ARTS","SOCI")]
+HSS <- induced_subgraph(g_24, HSS)
+
+components <- components(HSS)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(HSS, largest_component_vertices)
+
+png("2024_HSS.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+```{r}
+STEM <- V(g_24)[V(g_24)$discipline %in% c("COMP","MATHS","PHYS","ENGI")]
+STEM <- induced_subgraph(g_24, STEM)
+
+components <- components(STEM)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(STEM, largest_component_vertices)
+
+png("2024_STEM.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+
+## 2023
+
+```{r}
+Interdis_23 <- Interdis |> filter(date == 2023)
+Interdis_23 <- Interdis_23 |> select(collaboration_group, authid, date, discipline, title)
+
+matrix_23 <- Interdis_23 |> select(collaboration_group, authid, title) |> filter(collaboration_group > 1)
+matrix_23 <- matrix_23 |> group_by(title) |> 
+  mutate(authors = list(authid)) |> 
+  select(title, authors) |> 
+  ungroup() |> 
+  distinct(title, .keep_all = TRUE) |> 
+  unnest(authors) 
+```
+
+```{r}
+replace_null <- function(x) {
+  ifelse(is.null(x), 0, 1)
+}
+
+# 3
+# Pivot the data frame wider
+wide_network <- pivot_wider(matrix_23, 
+                             names_from = authors, 
+                             values_from = authors, 
+                             values_fn = replace_null)
+
+# 4
+wide_network <- ifelse(is.na(wide_network), 0, 1) 
+wide_network <- data.frame(wide_network) |> select(-title)
+wide_network_interdis <- as.matrix(wide_network)
+wide_network_interdis_transpose <- t(wide_network_interdis)
+
+dim(wide_network_interdis_transpose)
+dim(wide_network_interdis)
+
+# 5 
+# Perform matrix multiplication - author projection making squared matrix
+author_relationship_interdis <- wide_network_interdis_transpose %*% wide_network_interdis 
+
+diag(author_relationship_interdis) <- 0
+dim(author_relationship_interdis)
+
+inter_matrix_zero_one = ifelse(author_relationship_interdis == 0, 0, 1)
+dim(inter_matrix_zero_one)
+
+rownames(inter_matrix_zero_one) <- gsub("^X", "", rownames(inter_matrix_zero_one))
+colnames(inter_matrix_zero_one) <- gsub("^X", "", colnames(inter_matrix_zero_one))
+
+g_23 <- graph_from_adjacency_matrix(inter_matrix_zero_one, mode = "undirected")
+
+g_23 <- simplify(g_23)
+
+authid <- V(g_23)$name
+
+# Match indices of vertices in g_14 to their corresponding authid in Interdis
+indices <- match(authid, Interdis$authid)
+
+# Get discipline information corresponding to the matched indices
+discipline_info <- Interdis$discipline[indices]
+
+# Add discipline information as a vertex attribute in g_14
+V(g_23)$discipline <- discipline_info
+
+
+V(g_23)$color[V(g_23)$discipline == "ARTS"] <- "red"
+V(g_23)$color[V(g_23)$discipline == "SOCI"] <- "red"
+V(g_23)$color[V(g_23)$discipline == "COMP"] <- "blue"
+V(g_23)$color[V(g_23)$discipline == "MATHS"] <- "blue"
+V(g_23)$color[V(g_23)$discipline == "PHYS"] <- "blue"
+V(g_23)$color[V(g_23)$discipline == "ENGI"] <- "blue"
+
+components <- components(g_23)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(g_23, largest_component_vertices)
+
+png("2023_Interdis.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+### HSS & STEM
+
+```{r}
+HSS <- V(g_23)[V(g_23)$discipline %in% c("ARTS","SOCI")]
+HSS <- induced_subgraph(g_23, HSS)
+
+components <- components(HSS)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(HSS, largest_component_vertices)
+
+png("2023_HSS.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+```{r}
+STEM <- V(g_23)[V(g_23)$discipline %in% c("COMP","MATHS","PHYS","ENGI")]
+STEM <- induced_subgraph(g_23, STEM)
+
+components <- components(STEM)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(STEM, largest_component_vertices)
+
+png("2023_STEM.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+## 2022
+
+```{r}
+Interdis_22 <- Interdis |> filter(date == 2022)
+Interdis_22 <- Interdis_22 |> select(collaboration_group, authid, date, discipline, title)
+
+matrix <- Interdis_22 |> select(collaboration_group, authid, title) |> filter(collaboration_group > 1)
+matrix <- matrix |> group_by(title) |> 
+  mutate(authors = list(authid)) |> 
+  select(title, authors) |> 
+  ungroup() |> 
+  distinct(title, .keep_all = TRUE) |> 
+  unnest(authors) 
+```
+
+```{r}
+replace_null <- function(x) {
+  ifelse(is.null(x), 0, 1)
+}
+
+# 3
+# Pivot the data frame wider
+wide_network <- pivot_wider(matrix, 
+                             names_from = authors, 
+                             values_from = authors, 
+                             values_fn = replace_null)
+
+# 4
+wide_network <- ifelse(is.na(wide_network), 0, 1) 
+wide_network <- data.frame(wide_network) |> select(-title)
+wide_network_interdis <- as.matrix(wide_network)
+wide_network_interdis_transpose <- t(wide_network_interdis)
+
+dim(wide_network_interdis_transpose)
+dim(wide_network_interdis)
+
+# 5 
+# Perform matrix multiplication - author projection making squared matrix
+author_relationship_interdis <- wide_network_interdis_transpose %*% wide_network_interdis 
+
+diag(author_relationship_interdis) <- 0
+dim(author_relationship_interdis)
+
+inter_matrix_zero_one = ifelse(author_relationship_interdis == 0, 0, 1)
+dim(inter_matrix_zero_one)
+
+rownames(inter_matrix_zero_one) <- gsub("^X", "", rownames(inter_matrix_zero_one))
+colnames(inter_matrix_zero_one) <- gsub("^X", "", colnames(inter_matrix_zero_one))
+
+g <- graph_from_adjacency_matrix(inter_matrix_zero_one, mode = "undirected")
+
+g <- simplify(g)
+
+authid <- V(g)$name
+
+# Match indices of vertices in g_14 to their corresponding authid in Interdis
+indices <- match(authid, Interdis$authid)
+
+# Get discipline information corresponding to the matched indices
+discipline_info <- Interdis$discipline[indices]
+
+# Add discipline information as a vertex attribute in g_14
+V(g)$discipline <- discipline_info
+
+
+V(g)$color[V(g)$discipline == "ARTS"] <- "red"
+V(g)$color[V(g)$discipline == "SOCI"] <- "red"
+V(g)$color[V(g)$discipline == "COMP"] <- "blue"
+V(g)$color[V(g)$discipline == "MATHS"] <- "blue"
+V(g)$color[V(g)$discipline == "PHYS"] <- "blue"
+V(g)$color[V(g)$discipline == "ENGI"] <- "blue"
+
+components <- components(g)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(g, largest_component_vertices)
+
+png("2022_Interdis.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+### HSS & STEM
+
+```{r}
+HSS <- V(g)[V(g)$discipline %in% c("ARTS","SOCI")]
+HSS <- induced_subgraph(g, HSS)
+
+components <- components(HSS)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(HSS, largest_component_vertices)
+
+png("2022_HSS.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+```{r}
+STEM <- V(g)[V(g)$discipline %in% c("COMP","MATHS","PHYS","ENGI")]
+STEM <- induced_subgraph(g, STEM)
+
+components <- components(STEM)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(STEM, largest_component_vertices)
+
+png("2022_STEM.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+## 2021
+
+```{r}
+Interdis_21 <- Interdis |> filter(date == 2021)
+Interdis_21 <- Interdis_21 |> select(collaboration_group, authid, date, discipline, title)
+
+matrix <- Interdis_21 |> select(collaboration_group, authid, title) |> filter(collaboration_group > 1)
+matrix <- matrix |> group_by(title) |> 
+  mutate(authors = list(authid)) |> 
+  select(title, authors) |> 
+  ungroup() |> 
+  distinct(title, .keep_all = TRUE) |> 
+  unnest(authors) 
+```
+
+```{r}
+replace_null <- function(x) {
+  ifelse(is.null(x), 0, 1)
+}
+
+# 3
+# Pivot the data frame wider
+wide_network <- pivot_wider(matrix, 
+                             names_from = authors, 
+                             values_from = authors, 
+                             values_fn = replace_null)
+
+# 4
+wide_network <- ifelse(is.na(wide_network), 0, 1) 
+wide_network <- data.frame(wide_network) |> select(-title)
+wide_network_interdis <- as.matrix(wide_network)
+wide_network_interdis_transpose <- t(wide_network_interdis)
+
+dim(wide_network_interdis_transpose)
+dim(wide_network_interdis)
+
+# 5 
+# Perform matrix multiplication - author projection making squared matrix
+author_relationship_interdis <- wide_network_interdis_transpose %*% wide_network_interdis 
+
+diag(author_relationship_interdis) <- 0
+dim(author_relationship_interdis)
+
+inter_matrix_zero_one = ifelse(author_relationship_interdis == 0, 0, 1)
+dim(inter_matrix_zero_one)
+
+rownames(inter_matrix_zero_one) <- gsub("^X", "", rownames(inter_matrix_zero_one))
+colnames(inter_matrix_zero_one) <- gsub("^X", "", colnames(inter_matrix_zero_one))
+
+g <- graph_from_adjacency_matrix(inter_matrix_zero_one, mode = "undirected")
+
+g <- simplify(g)
+
+authid <- V(g)$name
+
+# Match indices of vertices in g_14 to their corresponding authid in Interdis
+indices <- match(authid, Interdis$authid)
+
+# Get discipline information corresponding to the matched indices
+discipline_info <- Interdis$discipline[indices]
+
+# Add discipline information as a vertex attribute in g_14
+V(g)$discipline <- discipline_info
+
+
+V(g)$color[V(g)$discipline == "ARTS"] <- "red"
+V(g)$color[V(g)$discipline == "SOCI"] <- "red"
+V(g)$color[V(g)$discipline == "COMP"] <- "blue"
+V(g)$color[V(g)$discipline == "MATHS"] <- "blue"
+V(g)$color[V(g)$discipline == "PHYS"] <- "blue"
+V(g)$color[V(g)$discipline == "ENGI"] <- "blue"
+
+components <- components(g)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(g, largest_component_vertices)
+
+png("2021_Interdis.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+### HSS & STEM
+
+```{r}
+HSS <- V(g)[V(g)$discipline %in% c("ARTS","SOCI")]
+HSS <- induced_subgraph(g, HSS)
+
+components <- components(HSS)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(HSS, largest_component_vertices)
+
+png("2021_HSS.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+```{r}
+STEM <- V(g)[V(g)$discipline %in% c("COMP","MATHS","PHYS","ENGI")]
+STEM <- induced_subgraph(g, STEM)
+
+components <- components(STEM)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(STEM, largest_component_vertices)
+
+png("2021_STEM.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+## 2020
+
+```{r}
+Interdis_20 <- Interdis |> filter(date == 2020)
+Interdis_20 <- Interdis_20 |> select(collaboration_group, authid, date, discipline, title)
+
+matrix <- Interdis_20 |> select(collaboration_group, authid, title) |> filter(collaboration_group > 1)
+matrix <- matrix |> group_by(title) |> 
+  mutate(authors = list(authid)) |> 
+  select(title, authors) |> 
+  ungroup() |> 
+  distinct(title, .keep_all = TRUE) |> 
+  unnest(authors) 
+```
+
+```{r}
+replace_null <- function(x) {
+  ifelse(is.null(x), 0, 1)
+}
+
+# 3
+# Pivot the data frame wider
+wide_network <- pivot_wider(matrix, 
+                             names_from = authors, 
+                             values_from = authors, 
+                             values_fn = replace_null)
+
+# 4
+wide_network <- ifelse(is.na(wide_network), 0, 1) 
+wide_network <- data.frame(wide_network) |> select(-title)
+wide_network_interdis <- as.matrix(wide_network)
+wide_network_interdis_transpose <- t(wide_network_interdis)
+
+dim(wide_network_interdis_transpose)
+dim(wide_network_interdis)
+
+# 5 
+# Perform matrix multiplication - author projection making squared matrix
+author_relationship_interdis <- wide_network_interdis_transpose %*% wide_network_interdis 
+
+diag(author_relationship_interdis) <- 0
+dim(author_relationship_interdis)
+
+inter_matrix_zero_one = ifelse(author_relationship_interdis == 0, 0, 1)
+dim(inter_matrix_zero_one)
+
+rownames(inter_matrix_zero_one) <- gsub("^X", "", rownames(inter_matrix_zero_one))
+colnames(inter_matrix_zero_one) <- gsub("^X", "", colnames(inter_matrix_zero_one))
+
+g <- graph_from_adjacency_matrix(inter_matrix_zero_one, mode = "undirected")
+
+g <- simplify(g)
+
+authid <- V(g)$name
+
+# Match indices of vertices in g_14 to their corresponding authid in Interdis
+indices <- match(authid, Interdis$authid)
+
+# Get discipline information corresponding to the matched indices
+discipline_info <- Interdis$discipline[indices]
+
+# Add discipline information as a vertex attribute in g_14
+V(g)$discipline <- discipline_info
+
+
+V(g)$color[V(g)$discipline == "ARTS"] <- "red"
+V(g)$color[V(g)$discipline == "SOCI"] <- "red"
+V(g)$color[V(g)$discipline == "COMP"] <- "blue"
+V(g)$color[V(g)$discipline == "MATHS"] <- "blue"
+V(g)$color[V(g)$discipline == "PHYS"] <- "blue"
+V(g)$color[V(g)$discipline == "ENGI"] <- "blue"
+
+components <- components(g)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(g, largest_component_vertices)
+
+png("2020_Interdis.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+
+### HSS & STEM
+
+```{r}
+HSS <- V(g)[V(g)$discipline %in% c("ARTS","SOCI")]
+HSS <- induced_subgraph(g, HSS)
+
+components <- components(HSS)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(HSS, largest_component_vertices)
+
+png("2020_HSS.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+```{r}
+STEM <- V(g)[V(g)$discipline %in% c("COMP","MATHS","PHYS","ENGI")]
+STEM <- induced_subgraph(g, STEM)
+
+components <- components(STEM)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(STEM, largest_component_vertices)
+
+
+png("2020_STEM.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+## 2019
+
+```{r}
+Interdis_19 <- Interdis |> filter(date == 2019)
+Interdis_19 <- Interdis_19 |> select(collaboration_group, authid, date, discipline, title)
+
+matrix <- Interdis_19 |> select(collaboration_group, authid, title) |> filter(collaboration_group > 1)
+matrix <- matrix |> group_by(title) |> 
+  mutate(authors = list(authid)) |> 
+  select(title, authors) |> 
+  ungroup() |> 
+  distinct(title, .keep_all = TRUE) |> 
+  unnest(authors) 
+```
+
+```{r}
+replace_null <- function(x) {
+  ifelse(is.null(x), 0, 1)
+}
+
+# 3
+# Pivot the data frame wider
+wide_network <- pivot_wider(matrix, 
+                             names_from = authors, 
+                             values_from = authors, 
+                             values_fn = replace_null)
+
+# 4
+wide_network <- ifelse(is.na(wide_network), 0, 1) 
+wide_network <- data.frame(wide_network) |> select(-title)
+wide_network_interdis <- as.matrix(wide_network)
+wide_network_interdis_transpose <- t(wide_network_interdis)
+
+dim(wide_network_interdis_transpose)
+dim(wide_network_interdis)
+
+# 5 
+# Perform matrix multiplication - author projection making squared matrix
+author_relationship_interdis <- wide_network_interdis_transpose %*% wide_network_interdis 
+
+diag(author_relationship_interdis) <- 0
+dim(author_relationship_interdis)
+
+inter_matrix_zero_one = ifelse(author_relationship_interdis == 0, 0, 1)
+dim(inter_matrix_zero_one)
+
+rownames(inter_matrix_zero_one) <- gsub("^X", "", rownames(inter_matrix_zero_one))
+colnames(inter_matrix_zero_one) <- gsub("^X", "", colnames(inter_matrix_zero_one))
+
+g <- graph_from_adjacency_matrix(inter_matrix_zero_one, mode = "undirected")
+
+g <- simplify(g)
+
+authid <- V(g)$name
+
+# Match indices of vertices in g_14 to their corresponding authid in Interdis
+indices <- match(authid, Interdis$authid)
+
+# Get discipline information corresponding to the matched indices
+discipline_info <- Interdis$discipline[indices]
+
+# Add discipline information as a vertex attribute in g_14
+V(g)$discipline <- discipline_info
+
+
+V(g)$color[V(g)$discipline == "ARTS"] <- "red"
+V(g)$color[V(g)$discipline == "SOCI"] <- "red"
+V(g)$color[V(g)$discipline == "COMP"] <- "blue"
+V(g)$color[V(g)$discipline == "MATHS"] <- "blue"
+V(g)$color[V(g)$discipline == "PHYS"] <- "blue"
+V(g)$color[V(g)$discipline == "ENGI"] <- "blue"
+
+components <- components(g)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(g, largest_component_vertices)
+
+png("2019_Interdis.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+### HSS & STEM
+
+```{r}
+HSS <- V(g)[V(g)$discipline %in% c("ARTS","SOCI")]
+HSS <- induced_subgraph(g, HSS)
+
+components <- components(HSS)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(HSS, largest_component_vertices)
+
+png("2019_HSS.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+```{r}
+STEM <- V(g)[V(g)$discipline %in% c("COMP","MATHS","PHYS","ENGI")]
+STEM <- induced_subgraph(g, STEM)
+
+components <- components(STEM)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(STEM, largest_component_vertices)
+
+png("2019_STEM.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+## 2018
+
+```{r}
+Interdis_18 <- Interdis |> filter(date == 2018)
+Interdis_18 <- Interdis_18 |> select(collaboration_group, authid, date, discipline, title)
+
+matrix <- Interdis_18 |> select(collaboration_group, authid, title) |> filter(collaboration_group > 1)
+matrix <- matrix |> group_by(title) |> 
+  mutate(authors = list(authid)) |> 
+  select(title, authors) |> 
+  ungroup() |> 
+  distinct(title, .keep_all = TRUE) |> 
+  unnest(authors) 
+```
+
+```{r}
+replace_null <- function(x) {
+  ifelse(is.null(x), 0, 1)
+}
+
+# 3
+# Pivot the data frame wider
+wide_network <- pivot_wider(matrix, 
+                             names_from = authors, 
+                             values_from = authors, 
+                             values_fn = replace_null)
+
+# 4
+wide_network <- ifelse(is.na(wide_network), 0, 1) 
+wide_network <- data.frame(wide_network) |> select(-title)
+wide_network_interdis <- as.matrix(wide_network)
+wide_network_interdis_transpose <- t(wide_network_interdis)
+
+dim(wide_network_interdis_transpose)
+dim(wide_network_interdis)
+
+# 5 
+# Perform matrix multiplication - author projection making squared matrix
+author_relationship_interdis <- wide_network_interdis_transpose %*% wide_network_interdis 
+
+diag(author_relationship_interdis) <- 0
+dim(author_relationship_interdis)
+
+inter_matrix_zero_one = ifelse(author_relationship_interdis == 0, 0, 1)
+dim(inter_matrix_zero_one)
+
+rownames(inter_matrix_zero_one) <- gsub("^X", "", rownames(inter_matrix_zero_one))
+colnames(inter_matrix_zero_one) <- gsub("^X", "", colnames(inter_matrix_zero_one))
+
+g <- graph_from_adjacency_matrix(inter_matrix_zero_one, mode = "undirected")
+
+g <- simplify(g)
+
+authid <- V(g)$name
+
+# Match indices of vertices in g_14 to their corresponding authid in Interdis
+indices <- match(authid, Interdis$authid)
+
+# Get discipline information corresponding to the matched indices
+discipline_info <- Interdis$discipline[indices]
+
+# Add discipline information as a vertex attribute in g_14
+V(g)$discipline <- discipline_info
+
+
+V(g)$color[V(g)$discipline == "ARTS"] <- "red"
+V(g)$color[V(g)$discipline == "SOCI"] <- "red"
+V(g)$color[V(g)$discipline == "COMP"] <- "blue"
+V(g)$color[V(g)$discipline == "MATHS"] <- "blue"
+V(g)$color[V(g)$discipline == "PHYS"] <- "blue"
+V(g)$color[V(g)$discipline == "ENGI"] <- "blue"
+
+components <- components(g)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(g, largest_component_vertices)
+
+png("2018_Interdis.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+### HSS & STEM
+
+```{r}
+HSS <- V(g)[V(g)$discipline %in% c("ARTS","SOCI")]
+HSS <- induced_subgraph(g, HSS)
+
+components <- components(HSS)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(HSS, largest_component_vertices)
+
+png("2018_HSS.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+```{r}
+STEM <- V(g)[V(g)$discipline %in% c("COMP","MATHS","PHYS","ENGI")]
+STEM <- induced_subgraph(g, STEM)
+
+components <- components(STEM)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(STEM, largest_component_vertices)
+
+png("2018_STEM.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+## 2017
+
+```{r}
+Interdis_17 <- Interdis |> filter(date == 2017)
+Interdis_17 <- Interdis_17 |> select(collaboration_group, authid, date, discipline, title)
+
+matrix <- Interdis_17 |> select(collaboration_group, authid, title) |> filter(collaboration_group > 1)
+matrix <- matrix |> group_by(title) |> 
+  mutate(authors = list(authid)) |> 
+  select(title, authors) |> 
+  ungroup() |> 
+  distinct(title, .keep_all = TRUE) |> 
+  unnest(authors) 
+```
+
+```{r}
+replace_null <- function(x) {
+  ifelse(is.null(x), 0, 1)
+}
+
+# 3
+# Pivot the data frame wider
+wide_network <- pivot_wider(matrix, 
+                             names_from = authors, 
+                             values_from = authors, 
+                             values_fn = replace_null)
+
+# 4
+wide_network <- ifelse(is.na(wide_network), 0, 1) 
+wide_network <- data.frame(wide_network) |> select(-title)
+wide_network_interdis <- as.matrix(wide_network)
+wide_network_interdis_transpose <- t(wide_network_interdis)
+
+dim(wide_network_interdis_transpose)
+dim(wide_network_interdis)
+
+# 5 
+# Perform matrix multiplication - author projection making squared matrix
+author_relationship_interdis <- wide_network_interdis_transpose %*% wide_network_interdis 
+
+diag(author_relationship_interdis) <- 0
+dim(author_relationship_interdis)
+
+inter_matrix_zero_one = ifelse(author_relationship_interdis == 0, 0, 1)
+dim(inter_matrix_zero_one)
+
+rownames(inter_matrix_zero_one) <- gsub("^X", "", rownames(inter_matrix_zero_one))
+colnames(inter_matrix_zero_one) <- gsub("^X", "", colnames(inter_matrix_zero_one))
+
+g <- graph_from_adjacency_matrix(inter_matrix_zero_one, mode = "undirected")
+
+g <- simplify(g)
+
+authid <- V(g)$name
+
+# Match indices of vertices in g_14 to their corresponding authid in Interdis
+indices <- match(authid, Interdis$authid)
+
+# Get discipline information corresponding to the matched indices
+discipline_info <- Interdis$discipline[indices]
+
+# Add discipline information as a vertex attribute in g_14
+V(g)$discipline <- discipline_info
+
+
+V(g)$color[V(g)$discipline == "ARTS"] <- "red"
+V(g)$color[V(g)$discipline == "SOCI"] <- "red"
+V(g)$color[V(g)$discipline == "COMP"] <- "blue"
+V(g)$color[V(g)$discipline == "MATHS"] <- "blue"
+V(g)$color[V(g)$discipline == "PHYS"] <- "blue"
+V(g)$color[V(g)$discipline == "ENGI"] <- "blue"
+
+components <- components(g)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(g, largest_component_vertices)
+
+png("2017_Interdis.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+### HSS & STEM
+
+```{r}
+HSS <- V(g)[V(g)$discipline %in% c("ARTS","SOCI")]
+HSS <- induced_subgraph(g, HSS)
+
+components <- components(HSS)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(HSS, largest_component_vertices)
+
+png("2017_HSS.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+```{r}
+STEM <- V(g)[V(g)$discipline %in% c("COMP","MATHS","PHYS","ENGI")]
+STEM <- induced_subgraph(g, STEM)
+
+components <- components(STEM)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(STEM, largest_component_vertices)
+
+
+png("2017_STEM.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+## 2016
+
+```{r}
+Interdis_16 <- Interdis |> filter(date == 2016)
+Interdis_16 <- Interdis_16 |> select(collaboration_group, authid, date, discipline, title)
+
+matrix <- Interdis_16 |> select(collaboration_group, authid, title) |> filter(collaboration_group > 1)
+matrix <- matrix |> group_by(title) |> 
+  mutate(authors = list(authid)) |> 
+  select(title, authors) |> 
+  ungroup() |> 
+  distinct(title, .keep_all = TRUE) |> 
+  unnest(authors) 
+```
+
+```{r}
+replace_null <- function(x) {
+  ifelse(is.null(x), 0, 1)
+}
+
+# 3
+# Pivot the data frame wider
+wide_network <- pivot_wider(matrix, 
+                             names_from = authors, 
+                             values_from = authors, 
+                             values_fn = replace_null)
+
+# 4
+wide_network <- ifelse(is.na(wide_network), 0, 1) 
+wide_network <- data.frame(wide_network) |> select(-title)
+wide_network_interdis <- as.matrix(wide_network)
+wide_network_interdis_transpose <- t(wide_network_interdis)
+
+dim(wide_network_interdis_transpose)
+dim(wide_network_interdis)
+
+# 5 
+# Perform matrix multiplication - author projection making squared matrix
+author_relationship_interdis <- wide_network_interdis_transpose %*% wide_network_interdis 
+
+diag(author_relationship_interdis) <- 0
+dim(author_relationship_interdis)
+
+inter_matrix_zero_one = ifelse(author_relationship_interdis == 0, 0, 1)
+dim(inter_matrix_zero_one)
+
+rownames(inter_matrix_zero_one) <- gsub("^X", "", rownames(inter_matrix_zero_one))
+colnames(inter_matrix_zero_one) <- gsub("^X", "", colnames(inter_matrix_zero_one))
+
+g <- graph_from_adjacency_matrix(inter_matrix_zero_one, mode = "undirected")
+
+g <- simplify(g)
+
+authid <- V(g)$name
+
+# Match indices of vertices in g_14 to their corresponding authid in Interdis
+indices <- match(authid, Interdis$authid)
+
+# Get discipline information corresponding to the matched indices
+discipline_info <- Interdis$discipline[indices]
+
+# Add discipline information as a vertex attribute in g_14
+V(g)$discipline <- discipline_info
+
+
+V(g)$color[V(g)$discipline == "ARTS"] <- "red"
+V(g)$color[V(g)$discipline == "SOCI"] <- "red"
+V(g)$color[V(g)$discipline == "COMP"] <- "blue"
+V(g)$color[V(g)$discipline == "MATHS"] <- "blue"
+V(g)$color[V(g)$discipline == "PHYS"] <- "blue"
+V(g)$color[V(g)$discipline == "ENGI"] <- "blue"
+
+components <- components(g)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(g, largest_component_vertices)
+
+png("2016_Interdis.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+### HSS & STEM
+
+```{r}
+HSS <- V(g)[V(g)$discipline %in% c("ARTS","SOCI")]
+HSS <- induced_subgraph(g, HSS)
+
+components <- components(HSS)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(HSS, largest_component_vertices)
+
+png("2016_HSS.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+```{r}
+STEM <- V(g)[V(g)$discipline %in% c("COMP","MATHS","PHYS","ENGI")]
+STEM <- induced_subgraph(g, STEM)
+
+components <- components(STEM)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(STEM, largest_component_vertices)
+
+png("2016_STEM.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+## 2015
+
+```{r}
+Interdis_15 <- Interdis |> filter(date == 2015)
+Interdis_15 <- Interdis_15 |> select(collaboration_group, authid, date, discipline, title)
+
+matrix <- Interdis_15 |> select(collaboration_group, authid, title) |> filter(collaboration_group > 1)
+matrix <- matrix |> group_by(title) |> 
+  mutate(authors = list(authid)) |> 
+  select(title, authors) |> 
+  ungroup() |> 
+  distinct(title, .keep_all = TRUE) |> 
+  unnest(authors) 
+```
+
+```{r}
+replace_null <- function(x) {
+  ifelse(is.null(x), 0, 1)
+}
+
+# 3
+# Pivot the data frame wider
+wide_network <- pivot_wider(matrix, 
+                             names_from = authors, 
+                             values_from = authors, 
+                             values_fn = replace_null)
+
+# 4
+wide_network <- ifelse(is.na(wide_network), 0, 1) 
+wide_network <- data.frame(wide_network) |> select(-title)
+wide_network_interdis <- as.matrix(wide_network)
+wide_network_interdis_transpose <- t(wide_network_interdis)
+
+dim(wide_network_interdis_transpose)
+dim(wide_network_interdis)
+
+# 5 
+# Perform matrix multiplication - author projection making squared matrix
+author_relationship_interdis <- wide_network_interdis_transpose %*% wide_network_interdis 
+
+diag(author_relationship_interdis) <- 0
+dim(author_relationship_interdis)
+
+inter_matrix_zero_one = ifelse(author_relationship_interdis == 0, 0, 1)
+dim(inter_matrix_zero_one)
+
+rownames(inter_matrix_zero_one) <- gsub("^X", "", rownames(inter_matrix_zero_one))
+colnames(inter_matrix_zero_one) <- gsub("^X", "", colnames(inter_matrix_zero_one))
+
+g <- graph_from_adjacency_matrix(inter_matrix_zero_one, mode = "undirected")
+
+g <- simplify(g)
+
+authid <- V(g)$name
+
+# Match indices of vertices in g_14 to their corresponding authid in Interdis
+indices <- match(authid, Interdis$authid)
+
+# Get discipline information corresponding to the matched indices
+discipline_info <- Interdis$discipline[indices]
+
+# Add discipline information as a vertex attribute in g_14
+V(g)$discipline <- discipline_info
+
+
+V(g)$color[V(g)$discipline == "ARTS"] <- "red"
+V(g)$color[V(g)$discipline == "SOCI"] <- "red"
+V(g)$color[V(g)$discipline == "COMP"] <- "blue"
+V(g)$color[V(g)$discipline == "MATHS"] <- "blue"
+V(g)$color[V(g)$discipline == "PHYS"] <- "blue"
+V(g)$color[V(g)$discipline == "ENGI"] <- "blue"
+
+components <- components(g)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(g, largest_component_vertices)
+
+png("2015_Interdis.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+### HSS & STEM
+
+```{r}
+HSS <- V(g)[V(g)$discipline %in% c("ARTS","SOCI")]
+HSS <- induced_subgraph(g, HSS)
+
+components <- components(HSS)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(HSS, largest_component_vertices)
+
+png("2015_HSS.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+```{r}
+STEM <- V(g)[V(g)$discipline %in% c("COMP","MATHS","PHYS","ENGI")]
+STEM <- induced_subgraph(g, STEM)
+
+components <- components(STEM)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(STEM, largest_component_vertices)
+
+png("2015_STEM.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+## 2014
+
+```{r}
+Interdis_14 <- Interdis |> filter(date == 2014)
+Interdis_14 <- Interdis_14 |> select(collaboration_group, authid, date, discipline, title)
+
+matrix <- Interdis_14 |> select(collaboration_group, authid, title) |> filter(collaboration_group > 1)
+matrix <- matrix |> group_by(title) |> 
+  mutate(authors = list(authid)) |> 
+  select(title, authors) |> 
+  ungroup() |> 
+  distinct(title, .keep_all = TRUE) |> 
+  unnest(authors) 
+```
+
+```{r}
+replace_null <- function(x) {
+  ifelse(is.null(x), 0, 1)
+}
+
+# 3
+# Pivot the data frame wider
+wide_network <- pivot_wider(matrix, 
+                             names_from = authors, 
+                             values_from = authors, 
+                             values_fn = replace_null)
+
+# 4
+wide_network <- ifelse(is.na(wide_network), 0, 1) 
+wide_network <- data.frame(wide_network) |> select(-title)
+wide_network_interdis <- as.matrix(wide_network)
+wide_network_interdis_transpose <- t(wide_network_interdis)
+
+dim(wide_network_interdis_transpose)
+dim(wide_network_interdis)
+
+# 5 
+# Perform matrix multiplication - author projection making squared matrix
+author_relationship_interdis <- wide_network_interdis_transpose %*% wide_network_interdis 
+
+diag(author_relationship_interdis) <- 0
+dim(author_relationship_interdis)
+
+inter_matrix_zero_one = ifelse(author_relationship_interdis == 0, 0, 1)
+dim(inter_matrix_zero_one)
+
+rownames(inter_matrix_zero_one) <- gsub("^X", "", rownames(inter_matrix_zero_one))
+colnames(inter_matrix_zero_one) <- gsub("^X", "", colnames(inter_matrix_zero_one))
+
+g <- graph_from_adjacency_matrix(inter_matrix_zero_one, mode = "undirected")
+
+g <- simplify(g)
+
+authid <- V(g)$name
+
+# Match indices of vertices in g_14 to their corresponding authid in Interdis
+indices <- match(authid, Interdis$authid)
+
+# Get discipline information corresponding to the matched indices
+discipline_info <- Interdis$discipline[indices]
+
+# Add discipline information as a vertex attribute in g_14
+V(g)$discipline <- discipline_info
+
+
+V(g)$color[V(g)$discipline == "ARTS"] <- "red"
+V(g)$color[V(g)$discipline == "SOCI"] <- "red"
+V(g)$color[V(g)$discipline == "COMP"] <- "blue"
+V(g)$color[V(g)$discipline == "MATHS"] <- "blue"
+V(g)$color[V(g)$discipline == "PHYS"] <- "blue"
+V(g)$color[V(g)$discipline == "ENGI"] <- "blue"
+
+components <- components(g)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(g, largest_component_vertices)
+
+png("2014_Interdis.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+### HSS & STEM
+
+```{r}
+HSS <- V(g)[V(g)$discipline %in% c("ARTS", "SOCI")]
+HSS <- induced_subgraph(g, HSS)
+
+components <- components(HSS)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(HSS, largest_component_vertices)
+
+png("2014_HSS.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
+
+```{r}
+STEM <- V(g)[V(g)$discipline %in% c("COMP","MATHS","PHYS","ENGI")]
+STEM <- induced_subgraph(g, STEM)
+
+components <- components(STEM)
+
+# Find the index of the largest component
+largest_component_index <- which.max(components$csize)
+
+# Get the vertices of the largest component
+largest_component_vertices <- which(components$membership == largest_component_index)
+
+# Extract the giant component
+giant_component <- induced_subgraph(STEM, largest_component_vertices)
+
+png("2014_STEM.png")
+
+layout = layout_nicely(giant_component)
+plot(giant_component, vertex.label = NA, vertex.size = 6, layout = layout)
+
+dev.off()
+
+length(giant_component)
+table(V(giant_component)$discipline)
+```
