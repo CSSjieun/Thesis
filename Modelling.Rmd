@@ -7,105 +7,66 @@ output: html_document
 
 
 ```{r}
+library(igraph)
+library(readr)
 # Load graph from Pajek
 big_component_data <- read_graph("big_component.graphml", format = "gml")
 
 # simplify the graph
 gRC <- simplify(big_component_data)
 
-install.packages("gender")
-library(gender)
-
-V(gRC)$authname <- data$authname
-
-
-unique_data <- data %>%
-  select(authid, authname) %>%
-  distinct()
-
-# authname에서 첫 번째 이름만 남기고 나머지는 제거합니다.
-unique_data <- unique_data %>%
-  mutate(firstname = sub(" .*", "", authname))
-
-# 그래프의 authid와 일치하는 firstname을 가져옵니다.
-firstname_vector <- V(gRC)$name %>%
-  as.character() %>%
-  match(unique_data$authid) %>%
-  unique_data$firstname[.]
-
-# 그래프에 firstname 속성을 추가합니다.
-V(gRC)$authname <- firstname_vector
-
-# gender categorizing
-gender <- gender(V(gRC)$authname)
+data <- read_csv("Disciplinary_graph_data/Interdis.csv")
 
 ```
 
 ```{r}
-library(igraph)
-library(dplyr)
-library(gender)
-library(stargazer)
+data <- data |> mutate(collaborator = number_of_collaborator - 1)
 
-collaboration_count <- degree(gRC, mode = "all")
-
-
-discipline <- V(gRC)$discipline
-
-
-author_papers <- data %>%
+collaborate_paper_data <- data |> 
+  filter(collaborator > 0) |> 
   group_by(authid) %>%
-  summarise(n_papers = n())
+  summarise(collaborate_paper_n = n()) %>%
+  ungroup()
 
+data <- data %>%
+  left_join(collaborate_paper_data, by = "authid")
 
-authnames <- unique(data.frame(authid = as.character(V(gRC)$name), authname = V(gRC)$authname))
-gender_data <- gender(unique(authnames$authname), method = "ssa") %>%
-  select(name, gender)
+n_paper <- data |> group_by(authid) |> summarise(n_paper = n()) |> ungroup()
 
+data <- data %>%
+  left_join(n_paper, by = "authid")
 
-unique_data <- authnames %>%
+unique_data <- data %>%
+  select(authid, authname) %>%
+  distinct() %>%
   mutate(firstname = sub(" .*", "", authname))
 
+authid_data = data.frame(V(gRC)$name)
+authid_data = authid_data |> rename(authid = 'V.gRC..name')
 
-unique_data <- unique_data %>%
-  left_join(gender_data, by = c("firstname" = "name"))
+node_data <- data |> select(authid, discipline, collaborator, collaborate_paper_n, n_paper, authname)
 
-node_data <- data.frame(
-  authid = as.character(V(gRC)$name),  
-  collaboration_count = collaboration_count,
-  discipline = discipline,
-  stringsAsFactors = FALSE
-)
+node_data = node_data |> mutate(firstname = sub(" .*", "", authname))
 
+filtered_node_data <- node_data %>%
+  filter(authid %in% authid_data$authid)
 
-author_papers <- author_papers %>%
-  mutate(authid = as.character(authid))  
+filtered_node_data <- filtered_node_data %>%
+  mutate(discipline = if_else(discipline %in% c('ARTS', 'SOCI'), 'HSS', 'STEM'))
 
-node_data <- node_data %>%
-  left_join(author_papers, by = "authid")
+filtered_node_data$discipline <- as.factor(filtered_node_data$discipline)
+levels(filtered_node_data$discipline)
 
+# write.csv(filtered_node_data, "filtered_node_data.csv", row.names = FALSE)
 
-node_data <- node_data %>%
-  left_join(unique_data, by = "authid")
-
-
-node_data$discipline <- as.factor(node_data$discipline)
-node_data$gender <- as.factor(node_data$gender)
-
-
-node_data <- node_data %>%
-  filter(!is.na(collaboration_count) & !is.na(discipline) & !is.na(n_papers) & !is.na(gender))
-
-
-levels(node_data$discipline)
-levels(node_data$gender)
-
+print(filtered_node_data)
 ```
+
 
 ### Model 1
 
 ```{r}
-model <- lm(collaboration_count ~ discipline + n_papers + gender, data = node_data)
+model <- lm(collaborate_paper_n ~ discipline + n_paper, data = filtered_node_data)
 
 # 결과 요약
 summary(model)
@@ -120,7 +81,7 @@ write.csv(node_data, "node_data.csv", row.names = FALSE)
 ### Model 2
 
 ```{r}
-model <- lm(log(collaboration_count) ~ discipline + log(n_papers) + gender, data = node_data)
+model <- lm(log(collaborate_paper_n) ~ discipline + log(n_paper), data = filtered_node_data)
 
 summary(model)
 ```
@@ -129,18 +90,17 @@ summary(model)
 ### Model 3
 
 ```{r}
-
 library(ggplot2)
 library(readr)
 library(dplyr)
 
-node_data 
+filtered_node_data 
 
-node_data <- node_data %>%
-  mutate(collab_percentage = (collaboration_count / n_papers) * 100)
+filtered_node_data <- filtered_node_data %>%
+  mutate(collab_percentage = (collaborate_paper_n / n_paper) * 100)
 
 # Fit the linear regression model
-model <- lm(collab_percentage ~ discipline + log(n_papers) + gender, data = node_data)
+model <- lm(collab_percentage ~ discipline + log(n_paper), data = filtered_node_data)
 
 # Display the summary of the model
 summary(model)
