@@ -1,0 +1,111 @@
+---
+title: "Model"
+author: "Jieun Park"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+```{r}
+library(igraph)
+library(readr)
+# Load graph from Pajek
+big_component_data <- read_graph("big_component.graphml", format = "gml")
+
+# simplify the graph
+gRC <- simplify(big_component_data)
+
+data <- read_csv("Disciplinary_graph_data/Interdis.csv")
+
+```
+
+```{r}
+data <- data |> mutate(collaborator = number_of_collaborator - 1)
+
+collaborate_paper_data <- data |> 
+  filter(collaborator > 0) |> 
+  group_by(authid) %>%
+  summarise(collaborate_paper_n = n()) %>%
+  ungroup()
+
+data <- data %>%
+  left_join(collaborate_paper_data, by = "authid")
+
+n_paper <- data |> group_by(authid) |> summarise(n_paper = n()) |> ungroup()
+
+data <- data %>%
+  left_join(n_paper, by = "authid")
+
+unique_data <- data %>%
+  select(authid, authname) %>%
+  distinct() %>%
+  mutate(firstname = sub(" .*", "", authname))
+
+authid_data = data.frame(V(gRC)$name)
+authid_data = authid_data |> rename(authid = 'V.gRC..name')
+
+node_data <- data |> select(authid, discipline, collaborator, collaborate_paper_n, n_paper, authname)
+
+node_data = node_data |> mutate(firstname = sub(" .*", "", authname))
+
+filtered_node_data <- node_data %>%
+  filter(authid %in% authid_data$authid)
+
+filtered_node_data <- filtered_node_data %>%
+  mutate(discipline = if_else(discipline %in% c('ARTS', 'SOCI'), 'HSS', 'STEM'))
+
+filtered_node_data$discipline <- as.factor(filtered_node_data$discipline)
+levels(filtered_node_data$discipline)
+
+# write.csv(filtered_node_data, "filtered_node_data.csv", row.names = FALSE)
+
+print(filtered_node_data)
+```
+
+
+### Model 1
+
+```{r}
+model <- lm(collaborate_paper_n ~ discipline + n_paper, data = filtered_node_data)
+
+# 결과 요약
+summary(model)
+
+stargazer(model, type = "text", out = "model_summary.txt")
+
+# Save the node_data dataframe as a CSV file
+write.csv(node_data, "node_data.csv", row.names = FALSE)
+```
+
+
+### Model 2
+
+```{r}
+model <- lm(log(collaborate_paper_n) ~ discipline + log(n_paper), data = filtered_node_data)
+
+summary(model)
+```
+
+
+### Model 3
+
+```{r}
+library(ggplot2)
+library(readr)
+library(dplyr)
+
+filtered_node_data 
+
+filtered_node_data <- filtered_node_data %>%
+  mutate(collab_percentage = (collaborate_paper_n / n_paper) * 100)
+
+# Fit the linear regression model
+model <- lm(collab_percentage ~ discipline + log(n_paper), data = filtered_node_data)
+
+# Display the summary of the model
+summary(model)
+
+```
+
+
+
